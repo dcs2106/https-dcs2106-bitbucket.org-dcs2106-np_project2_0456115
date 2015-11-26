@@ -23,6 +23,14 @@ typedef struct superpipe{
 	int pipe_fd[2];
 }superpipe;
 
+typedef struct {
+	char user_name[30][20];
+	char user_ip[50];
+}User_info;
+
+int memid;
+int clientfd;
+
 int linelen(int fd,char *ptr,int maxlen);
 int main(int argc,char *argv[])
 {
@@ -30,26 +38,26 @@ int main(int argc,char *argv[])
 	if (argc==2){
 		port=atoi(argv[1]);
 	}
-	int sockfd,clientfd;
-	int *status=0;
-	struct sockaddr_in dest;
-	char Hello[200] = "****************************************\n** Welcome to the information server. **\n****************************************\n";
 	char msg[Maxlenline];
 	char buf[Maxlenline];
 	char environpath[10][Maxlenline];//max 10 paths
+	int environ_num=0;
+		clearenv();
+		chdir("/net/gcs/104/0456115/ras");
+		setenv("PATH","bin:.",1);//set environment
+		strcpy(environpath[environ_num],"PATH");
+		environ_num++;
+	int sockfd/*,clientfd*/;
+	int *status=0;
+	struct sockaddr_in dest;
+	char Hello[200] = "****************************************\n** Welcome to the information server. **\n****************************************\n";
+	
 	/*initial*/
 	bzero((char *)&dest,sizeof(dest));
 	dest.sin_family = AF_INET;
 	dest.sin_port = htons(port);
 	dest.sin_addr.s_addr = INADDR_ANY;
-	
-	int environ_num=0;
-	clearenv();
-	chdir("/net/gcs/104/0456115/ras");
-	setenv("PATH","bin:.",1);//set environment
-	strcpy(environpath[environ_num],"PATH");
-	environ_num++;
-	
+
 	sockfd = socket(PF_INET,SOCK_STREAM,0);//create socket
 	if(sockfd < 0){//socket
 		fprintf(stderr,"socket error\n");
@@ -107,9 +115,9 @@ int main(int argc,char *argv[])
 					return 0;
 				}
 				else if(strstr(commands,"setenv")!=0){
-					for(int i=0;i<1000;i++){
+					/*for(int i=0;i<1000;i++){
 						if(super_pipe[i].count > 0 && super_pipe[i].valid==1)super_pipe[i].count--;
-					}
+					}*/
 					char *str;
 					char pathname[CommandLen];
 					char path[CommandLen];
@@ -144,9 +152,9 @@ int main(int argc,char *argv[])
 					}	
 				}
 				else if(strstr(commands,"printenv")!=0){
-					for(int i=0;i<1000;i++){
+					/*for(int i=0;i<1000;i++){
 						if(super_pipe[i].count > 0 && super_pipe[i].valid==1)super_pipe[i].count--;
-					}
+					}*/
 					char *str;
 					char pathname[CommandLen];
 					char path[CommandLen];
