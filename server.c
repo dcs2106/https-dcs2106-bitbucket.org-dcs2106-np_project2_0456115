@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
+#include <sys/shm.h>
 #include <ctype.h>
 #include <fcntl.h>
 #define Maxlenline 15000
@@ -30,6 +31,7 @@ typedef struct {
 
 int memid;
 int clientfd;
+User_info *user_id;
 
 int linelen(int fd,char *ptr,int maxlen);
 int main(int argc,char *argv[])
@@ -57,7 +59,18 @@ int main(int argc,char *argv[])
 	dest.sin_family = AF_INET;
 	dest.sin_port = htons(port);
 	dest.sin_addr.s_addr = INADDR_ANY;
-
+	
+	memid=shmget((key_t)6666,sizeof(User_info),0666|IPC_CREAT);
+	if(memid==-1){
+		printf("shmget error\n");
+		exit(1);
+	}
+	user_id=(User_info *)shmat(memid,(char *)0,0);
+	if(user_id == (void *)-1){
+		printf("shmat error\n");
+		exit(1);
+	}
+	
 	sockfd = socket(PF_INET,SOCK_STREAM,0);//create socket
 	if(sockfd < 0){//socket
 		fprintf(stderr,"socket error\n");
