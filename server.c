@@ -16,7 +16,7 @@
 #define CommandLen 256
 #define MaxPipenum 1000
 #define Port 7123
-#define ClientNum 10
+#define ClientNum 30
 
 typedef struct superpipe{
 	int count;
@@ -33,12 +33,15 @@ int memid;
 int clientfd;
 User_info *user_id;
 
+int connectsock(char *service, char *protocol);
 int linelen(int fd,char *ptr,int maxlen);
 int main(int argc,char *argv[])
 {
+	char *service;
 	int port=Port;
 	if (argc==2){
 		port=atoi(argv[1]);
+		service = argv[1];
 	}
 	char msg[Maxlenline];
 	char buf[Maxlenline];
@@ -51,16 +54,11 @@ int main(int argc,char *argv[])
 		environ_num++;
 	int sockfd/*,clientfd*/;
 	int *status=0;
-	struct sockaddr_in dest;
+	
 	char Hello[200] = "****************************************\n** Welcome to the information server. **\n****************************************\n";
+
 	
-	/*initial*/
-	bzero((char *)&dest,sizeof(dest));
-	dest.sin_family = AF_INET;
-	dest.sin_port = htons(port);
-	dest.sin_addr.s_addr = INADDR_ANY;
-	
-	memid=shmget((key_t)6666,sizeof(User_info),0666|IPC_CREAT);
+	/*memid=shmget((key_t)6666,sizeof(User_info),0666|IPC_CREAT);
 	if(memid==-1){
 		printf("shmget error\n");
 		exit(1);
@@ -69,22 +67,13 @@ int main(int argc,char *argv[])
 	if(user_id == (void *)-1){
 		printf("shmat error\n");
 		exit(1);
-	}
-	
-	sockfd = socket(PF_INET,SOCK_STREAM,0);//create socket
-	if(sockfd < 0){//socket
-		fprintf(stderr,"socket error\n");
-		exit(1);
-	}
-	
-	bind(sockfd,(struct sockaddr*)&dest,sizeof(dest));
-	listen(sockfd,ClientNum);//listen
+	}*/
+	sockfd=connectsock(service,"tcp");
 	printf("SERVER_PORT: %d\n",port);
 	
 	struct sockaddr_in client_addr;
 	socklen_t addrlen = sizeof(client_addr);
-	char finish[30];
-
+	
 	for(;;){
 		clientfd = accept(sockfd,(struct sockaddr*)&client_addr,&addrlen);
 		/*if(clientfd == -1){
@@ -665,3 +654,42 @@ int linelen(int fd,char *ptr,int maxlen)
 	*ptr=0;
 	return(n);
 }     
+int connectsock(char *service, char *protocol)
+{
+	int s,type;
+	struct servent *pse;
+	struct protoent *ppe;
+	struct sockaddr_in dest;
+	int portbase = 50000;
+	
+	bzero((char *)&dest,sizeof(dest));
+	dest.sin_family = AF_INET;
+	dest.sin_addr.s_addr = INADDR_ANY;
+	//dest.sin_port = htons(port);
+	
+	if(pse = getservbyname(service,protocol)){
+		//dest.sin_port = htons(port);
+		dest.sin_port=htons(ntohs((u_short)pse->s_port) + portbase);
+	}
+	else if((dest.sin_port = htons((u_short)atoi(service)))==0){
+		exit(1);
+	}
+	if((ppe = getprotobyname(protocol)) == 0){
+        fprintf(stderr, "can't get \"%s\" protocol entry\n", protocol); 
+        fflush(stderr);
+        exit(1);
+    }
+	
+	if(strcmp(protocol,"udp")==0 ) {
+		type = SOCK_DGRAM;
+	}
+	else{
+		type = SOCK_STREAM;
+	}
+	
+	s = socket(PF_INET,type,ppe->p_proto);
+	bind(s, (struct sockaddr *)&dest, sizeof(dest));
+	listen(s, ClientNum);
+	
+	return s;
+}
