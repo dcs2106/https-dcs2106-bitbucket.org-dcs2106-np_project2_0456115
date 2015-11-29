@@ -17,7 +17,10 @@
 #define MaxPipenum 1000
 #define Port 7123
 #define ClientNum 30
-
+#define MaxPATH 10
+#define MaxMsg 10
+#define MaxMsglen 1024
+#define MaxPathLen 50
 typedef struct superpipe{
 	int count;
 	int valid;
@@ -25,16 +28,25 @@ typedef struct superpipe{
 }superpipe;
 
 typedef struct {
-	char user_name[30][20];
-	char user_ip[50];
+	char user_name[ClientNum][20];
+	int user_fd_table[ClientNum];
+	char user_environpath[ClientNum][MaxPATH][MaxPathLen];
+	int user_enTablesize[ClientNum];
+	int user_msgtablesize[ClientNum];
+	char user_msgtable[ClientNum][MaxMsg][MaxMsglen];
+	int userPidTable[ClientNum];
 }User_info;
 
 int memid;
 int clientfd;
-User_info *user_id;
+int user_id,user_index;
+User_info *user;
 
 int connectsock(char *service, char *protocol);
 int linelen(int fd,char *ptr,int maxlen);
+void sendTo(User_info *user, int index, char *broadcast_msg);
+void broadcast(User_info *user, int Size, char *broadcast_msg);
+void readBuffer();
 int main(int argc,char *argv[])
 {
 	char *service;
@@ -45,29 +57,33 @@ int main(int argc,char *argv[])
 	}
 	char msg[Maxlenline];
 	char buf[Maxlenline];
-	char environpath[10][Maxlenline];//max 10 paths
-	int environ_num=0;
+	//char environpath[10][Maxlenline];//max 10 paths
+	//int environ_num=0;
 		clearenv();
 		chdir("/net/gcs/104/0456115/ras");
 		setenv("PATH","bin:.",1);//set environment
-		strcpy(environpath[environ_num],"PATH");
-		environ_num++;
-	int sockfd/*,clientfd*/;
+		//strcpy(environpath[environ_num],"PATH");
+		//environ_num++;
+	int sockfd;
 	int *status=0;
 	
 	char Hello[200] = "****************************************\n** Welcome to the information server. **\n****************************************\n";
-
 	
-	/*memid=shmget((key_t)6666,sizeof(User_info),0666|IPC_CREAT);
+	memid=shmget((key_t)6666,sizeof(User_info),0666|IPC_CREAT);
 	if(memid==-1){
 		printf("shmget error\n");
 		exit(1);
 	}
-	user_id=(User_info *)shmat(memid,(char *)0,0);
-	if(user_id == (void *)-1){
+	user=(User_info *)shmat(memid,(char *)0,0);
+	if(user == (void *)-1){
 		printf("shmat error\n");
 		exit(1);
-	}*/
+	}
+	for(int i=0;i<ClientNum;i++){
+		user->user_fd_table[i]=-1;
+	}
+	
+	signal(SIGUSR1,readBuffer);
 	sockfd=connectsock(service,"tcp");
 	printf("SERVER_PORT: %d\n",port);
 	
@@ -75,18 +91,38 @@ int main(int argc,char *argv[])
 	socklen_t addrlen = sizeof(client_addr);
 	
 	for(;;){
+		//printf("12\n");
 		clientfd = accept(sockfd,(struct sockaddr*)&client_addr,&addrlen);
 		/*if(clientfd == -1){
 			fprintf(stderr,"connect error\n");
 			exit(1);
 		}*/
+		int temp;
+		for(int i=0 ; i<ClientNum ;i++){
+			if(user->user_fd_table[i] == -1){
+				temp=i;
+				break;
+			}
+		}
+		
+		user->user_fd_table[temp]=clientfd;
+		strcpy(user->user_name[temp],"(no name)");
+		user->user_enTablesize[temp]=0;
+		strcpy(user->user_environpath[temp][user->user_enTablesize[temp]],"PATH=bin:.");
+		user->user_enTablesize[temp]++;
+		user->user_msgtablesize[temp]=0;
+		
+		write(clientfd,Hello,strlen(Hello));
 		
 		int childpid;
 		childpid=fork();
 		if(childpid == -1) fprintf(stderr,"fork error\n");
 		else if(childpid == 0){//child process
 			superpipe super_pipe[1000];
-			//int num_super_pipe=0;
+			char commands[Maxlenline];
+			char commands2[Maxlenline];
+			char ip[Maxlenline];
+			char connectmsg[Maxlenline];
 			for(int i=0;i<1000;i++){
 				super_pipe[i].count=0;
 				super_pipe[i].valid=0;
@@ -95,16 +131,27 @@ int main(int argc,char *argv[])
 			char *postfix = "% ";
 			close(sockfd);
 			
+			user_index=temp;
+			user_id=user_index+1;
+			
 			dup2(clientfd,fileno(stdout));
 			dup2(clientfd,fileno(stderr));
 			
-			write(clientfd,Hello,strlen(Hello));
+			//get ip
+			//inet_ntop(AF_INET, (void *)(&src.sin_addr.s_addr), ipString, sizeof(ipString));    //  convert IPv4 and IPv6 addresses from binary to text form
+			//sprintf(portString, "%u", ntohs(src.sin_port));
+			strcpy(ip, "NCTU/511");
+			sprintf(connectmsg,"*** User '%s' entered from %s. ***\n",user->user_name[user_index],ip);
+			broadcast(user,ClientNum,connectmsg);
+			
+			
+			//write(clientfd,Hello,strlen(Hello));
 			write(clientfd,postfix,strlen(postfix));
 			
 			
 			while(linelen(clientfd,buf,sizeof(buf))!=0){
-				char commands[Maxlenline];
-				char commands2[Maxlenline];
+				//char commands[Maxlenline];
+				//char commands2[Maxlenline];
 				strcpy(commands,buf);
 				
 				
@@ -117,10 +164,8 @@ int main(int argc,char *argv[])
 					return 0;
 				}
 				else if(strstr(commands,"setenv")!=0){
-					/*for(int i=0;i<1000;i++){
-						if(super_pipe[i].count > 0 && super_pipe[i].valid==1)super_pipe[i].count--;
-					}*/
-					char *str;
+					
+					/*char *str;
 					char pathname[CommandLen];
 					char path[CommandLen];
 					int exist=0;
@@ -151,12 +196,10 @@ int main(int argc,char *argv[])
 								environ_num++;
 							}
 						}
-					}	
+					}	*/
 				}
 				else if(strstr(commands,"printenv")!=0){
-					/*for(int i=0;i<1000;i++){
-						if(super_pipe[i].count > 0 && super_pipe[i].valid==1)super_pipe[i].count--;
-					}*/
+					
 					char *str;
 					char pathname[CommandLen];
 					char path[CommandLen];
@@ -630,6 +673,7 @@ int main(int argc,char *argv[])
 		}
 		else{
 			close(clientfd);
+			user->userPidTable[temp]=childpid;
 			continue;
 		}
 	}
@@ -692,4 +736,39 @@ int connectsock(char *service, char *protocol)
 	listen(s, ClientNum);
 	
 	return s;
+}
+void sendTo(User_info *user, int index, char *broadcast_msg)
+{
+	int length;
+	int n = user->user_msgtablesize[index];
+	if(strlen(broadcast_msg) <= MaxMsglen){
+		length = strlen(broadcast_msg);
+	}
+	else{
+		length = MaxMsglen;
+	}
+	
+	if(n < MaxMsg){
+		strncpy(user->user_msgtable[index][n],broadcast_msg,length);
+		user->user_msgtable[index][n][length]='\0';
+		user->user_msgtablesize[index]++;
+	}
+	
+	kill(user->userPidTable[index],SIGUSR1);
+}
+void broadcast(User_info *user, int Size, char* broadcast_msg)
+{
+	for(int i=0;i < Size;i++){
+		if(user->user_fd_table[i]!= -1){
+			sendTo(user,i,broadcast_msg);
+		}
+	}
+}
+void readBuffer()
+{
+	int n = user->user_msgtablesize[user_index];
+	for(int i=0;i<n;i++){
+		write(clientfd,user->user_msgtable[user_index][i],strlen(user->user_msgtable[user_index][i]));
+	}
+	user->user_msgtablesize[user_index]=0;
 }
