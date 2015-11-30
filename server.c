@@ -15,7 +15,6 @@
 #define Maxlenline 15000
 #define CommandLen 256
 #define MaxPipenum 1000
-#define Port 7123
 #define ClientNum 30
 #define MaxPATH 10
 #define MaxMsg 10
@@ -35,6 +34,7 @@ typedef struct {
 	int user_msgtablesize[ClientNum];
 	char user_msgtable[ClientNum][MaxMsg][MaxMsglen];
 	int userPidTable[ClientNum];
+	struct sockaddr_in user_ip[ClientNum];
 }User_info;
 
 int memid;
@@ -50,9 +50,9 @@ void readBuffer();
 int main(int argc,char *argv[])
 {
 	char *service;
-	int port=Port;
+	int portnum=5641;
 	if (argc==2){
-		port=atoi(argv[1]);
+		portnum=atoi(argv[1]);
 		service = argv[1];
 	}
 	char msg[Maxlenline];
@@ -82,7 +82,7 @@ int main(int argc,char *argv[])
 	
 	signal(SIGUSR1,readBuffer);
 	sockfd=connectsock(service,"tcp");
-	printf("SERVER_PORT: %d\n",port);
+	printf("SERVER_PORT: %d\n",portnum);
 	
 	struct sockaddr_in client_addr;
 	socklen_t addrlen = sizeof(client_addr);
@@ -108,6 +108,7 @@ int main(int argc,char *argv[])
 		strcpy(user->user_environpath[temp][user->user_ensizeTable[temp]],"PATH=bin:.");
 		user->user_ensizeTable[temp]++;
 		user->user_msgtablesize[temp]=0;
+		user->user_ip[temp]=client_addr;
 		
 		write(clientfd,Hello,strlen(Hello));
 		
@@ -119,6 +120,7 @@ int main(int argc,char *argv[])
 			char commands[Maxlenline];
 			char commands2[Maxlenline];
 			char ip[Maxlenline];
+			char port[Maxlenline];
 			char connectmsg[Maxlenline];
 			for(int i=0;i<1000;i++){
 				super_pipe[i].count=0;
@@ -135,8 +137,10 @@ int main(int argc,char *argv[])
 			dup2(clientfd,fileno(stderr));
 			
 			//get ip
-			//inet_ntop(AF_INET, (void *)(&src.sin_addr.s_addr), ipString, sizeof(ipString));    //  convert IPv4 and IPv6 addresses from binary to text form
-			//sprintf(portString, "%u", ntohs(src.sin_port));
+			//inet_ntop(AF_INET, (void *)(&user->user_ip.sin_addr.s_addr), ip, sizeof(ip));    //  convert IPv4 and IPv6 addresses from binary to text form
+			//strcat(ip,"/");
+			//sprintf(port, "%u", ntohs(user->user_ip.sin_port));
+			//strcat(ip,port);
 			strcpy(ip, "CGILAB/511");
 			sprintf(connectmsg,"*** User '%s' entered from %s. ***\n",user->user_name[user_index],ip);
 			broadcast(user,ClientNum,connectmsg);
@@ -163,6 +167,51 @@ int main(int argc,char *argv[])
 					close(clientfd);
 					
 					return 0;
+				}
+				else if(strstr(commands,"name")!=0){
+					char *str;
+					char namemsg[Maxlenline];
+					char name[20];
+					int name_exist=0;
+					str=strtok(commands," \r\n");//command
+					str=strtok(NULL," \r\n");//name
+					strcpy(name,str);
+					
+					//check name is existed or not
+					for(int i=0;i<30;i++){
+						if(user->user_fd_table[i] != -1 && strcmp(user->user_name[i],name)==0){
+							name_exist=1;
+							break;
+						}
+					}
+					if(name_exist==0){
+						strcpy(user->user_name[user_index],name);
+						sprintf(namemsg,"*** User from CGILAB/511 is named '%s'. ***\n",name);
+						broadcast(user,ClientNum,namemsg);
+					}
+					else{
+						sprintf(namemsg,"*** User '%s' already exists. ***\n",name);
+						write(clientfd,namemsg,strlen(namemsg));
+					}
+					
+				}
+				else if(strstr(commands,"who")!=0){
+					char whomsg[Maxlenline];
+					strcpy(whomsg,"<ID>\t<nickname>\t<IP/port>\t<indicate me>\n");
+					write(clientfd,whomsg,strlen(whomsg));
+					for(int i=0; i<ClientNum;i++){
+						if(user->user_fd_table[i]!=-1){
+							char info[Maxlenline];
+							char who_ip[Maxlenline];
+							strcpy(who_ip,"CGILAB/511");
+							sprintf(info,"%d\t%s\t%s",i+1,user->user_name[i],who_ip);
+							if(i==user_index){
+								strcat(info,"\t<-me");
+							}
+							strcat(info,"\n");
+							write(clientfd,info,strlen(info));
+						}
+					}
 				}
 				else if(strstr(commands,"setenv")!=0){
 					char *str;
