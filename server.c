@@ -31,7 +31,7 @@ typedef struct {
 	char user_name[ClientNum][20];
 	int user_fd_table[ClientNum];
 	char user_environpath[ClientNum][MaxPATH][MaxPathLen];
-	int user_enTablesize[ClientNum];
+	int user_ensizeTable[ClientNum];
 	int user_msgtablesize[ClientNum];
 	char user_msgtable[ClientNum][MaxMsg][MaxMsglen];
 	int userPidTable[ClientNum];
@@ -57,13 +57,10 @@ int main(int argc,char *argv[])
 	}
 	char msg[Maxlenline];
 	char buf[Maxlenline];
-	//char environpath[10][Maxlenline];//max 10 paths
-	//int environ_num=0;
-		clearenv();
-		chdir("/net/gcs/104/0456115/ras");
-		setenv("PATH","bin:.",1);//set environment
-		//strcpy(environpath[environ_num],"PATH");
-		//environ_num++;
+	
+	clearenv();
+	chdir("/net/gcs/104/0456115/ras");
+	setenv("PATH","bin:.",1);//set environment
 	int sockfd;
 	int *status=0;
 	
@@ -107,9 +104,9 @@ int main(int argc,char *argv[])
 		
 		user->user_fd_table[temp]=clientfd;
 		strcpy(user->user_name[temp],"(no name)");
-		user->user_enTablesize[temp]=0;
-		strcpy(user->user_environpath[temp][user->user_enTablesize[temp]],"PATH=bin:.");
-		user->user_enTablesize[temp]++;
+		user->user_ensizeTable[temp]=0;
+		strcpy(user->user_environpath[temp][user->user_ensizeTable[temp]],"PATH=bin:.");
+		user->user_ensizeTable[temp]++;
 		user->user_msgtablesize[temp]=0;
 		
 		write(clientfd,Hello,strlen(Hello));
@@ -140,7 +137,7 @@ int main(int argc,char *argv[])
 			//get ip
 			//inet_ntop(AF_INET, (void *)(&src.sin_addr.s_addr), ipString, sizeof(ipString));    //  convert IPv4 and IPv6 addresses from binary to text form
 			//sprintf(portString, "%u", ntohs(src.sin_port));
-			strcpy(ip, "NCTU/511");
+			strcpy(ip, "CGILAB/511");
 			sprintf(connectmsg,"*** User '%s' entered from %s. ***\n",user->user_name[user_index],ip);
 			broadcast(user,ClientNum,connectmsg);
 			
@@ -160,15 +157,18 @@ int main(int argc,char *argv[])
 					write(clientfd,msg,strlen(msg));
 				}
 				else if(strstr(commands,"exit")!=0){//finished
+					char exitmsg[Maxlenline];
+					sprintf(exitmsg,"*** User '%s' left. ***",user->user_name[user_index]);
+					broadcast(user,ClientNum,exitmsg);
 					close(clientfd);
+					
 					return 0;
 				}
 				else if(strstr(commands,"setenv")!=0){
-					
-					/*char *str;
+					char *str;
 					char pathname[CommandLen];
 					char path[CommandLen];
-					int exist=0;
+					int exist=-1;
 					str=strtok(commands," \r\n");//setenv
 					str=strtok(NULL," \r\n");//pathname
 					if(str==NULL){
@@ -183,20 +183,26 @@ int main(int argc,char *argv[])
 							write(clientfd,msg,strlen(msg));
 						}
 						else{
+							strcat(path,pathname);
+							strcat(path,"=");
 							strcpy(path,str);
 							setenv(pathname,path,1);
-							for(int i=0;i<10;i++){//path exist or not
-								if(strcmp(environpath[i],pathname)==0){
-									exist=1;
+							for(int i=0 ; i<user->user_ensizeTable[user_index] ;i++){//path exist or not
+								if(strstr(user->user_environpath[user_index][i],pathname)!=0){
+									exist=i;
 									break;
 								}
 							}
-							if(exist==0){
-								strcpy(environpath[environ_num],pathname);
-								environ_num++;
+							
+							if(exist==-1){
+								strcpy(user->user_environpath[user_index][user->user_ensizeTable[user_index]],pathname);
+								user->user_ensizeTable[user_index]++;
+							}
+							else{
+								strcpy(user->user_environpath[user_index][exist],pathname);
 							}
 						}
-					}	*/
+					}	
 				}
 				else if(strstr(commands,"printenv")!=0){
 					
@@ -352,7 +358,7 @@ int main(int argc,char *argv[])
 							}
 						}
 						else{//error cmd
-							char cmderrmsg[CommandLen+30]="Unknown Command: [";
+							char cmderrmsg[CommandLen+30]="Unknown command: [";
 							strcat(cmderrmsg,str);
 							strcat(cmderrmsg,"].");
 							strcat(cmderrmsg,"\n");
@@ -429,7 +435,7 @@ int main(int argc,char *argv[])
 								if(i>0){
 									close(current_read_temp);
 								}
-								char cmderrmsg[CommandLen+30]="Unknown Command: [";
+								char cmderrmsg[CommandLen+30]="Unknown command: [";
 								strcat(cmderrmsg,cmd);
 								strcat(cmderrmsg,"].");
 								strcat(cmderrmsg,"\n");
