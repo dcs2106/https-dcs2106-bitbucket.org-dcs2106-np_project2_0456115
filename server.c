@@ -47,6 +47,7 @@ int linelen(int fd,char *ptr,int maxlen);
 void sendTo(User_info *user, int index, char *broadcast_msg);
 void broadcast(User_info *user, int Size, char *broadcast_msg);
 void readBuffer();
+void initial(int index);
 int main(int argc,char *argv[])
 {
 	char *service;
@@ -88,12 +89,7 @@ int main(int argc,char *argv[])
 	socklen_t addrlen = sizeof(client_addr);
 	
 	for(;;){
-		//printf("12\n");
 		clientfd = accept(sockfd,(struct sockaddr*)&client_addr,&addrlen);
-		/*if(clientfd == -1){
-			fprintf(stderr,"connect error\n");
-			exit(1);
-		}*/
 		int temp;
 		for(int i=0 ; i<ClientNum ;i++){
 			if(user->user_fd_table[i] == -1){
@@ -164,6 +160,9 @@ int main(int argc,char *argv[])
 					char exitmsg[Maxlenline];
 					sprintf(exitmsg,"*** User '%s' left. ***",user->user_name[user_index]);
 					broadcast(user,ClientNum,exitmsg);
+					
+					initial(user_index);//clean and reset
+					
 					close(clientfd);
 					
 					return 0;
@@ -212,6 +211,35 @@ int main(int argc,char *argv[])
 							write(clientfd,info,strlen(info));
 						}
 					}
+				}
+				else if(strstr(commands,"yell")!=0){
+					char yellmsg[Maxlenline];
+					char *str;
+					str=strtok(commands," \r\n");//yell
+					str=strtok(NULL,"\r\n");//msg
+					sprintf(yellmsg,"*** %s yelled ***: %s",user->user_name[user_index],str);
+					broadcast(user,ClientNum,yellmsg);
+					
+				}
+				else if(strstr(commands,"tell")!=0){
+					char tellmsg[Maxlenline];
+					int tell_id;
+					char *str;
+					str=strtok(commands," \r\n");//tell
+					str=strtok(NULL," \r\n");//tell id
+					tell_id=atoi(str);
+					str=strtok(NULL,"\r\n");//msg
+					
+					//check id exist
+					if(user->user_fd_table[tell_id-1]!=-1){
+						sprintf(tellmsg,"*** %s told you ***: %s",user->user_name[tell_id-1],str);
+						sendTo(user,tell_id-1,tellmsg);
+					}
+					else{//not exist
+						sprintf(tellmsg,"*** Error: user #<%d> does not exist yet. ***\n",tell_id);
+						write(clientfd,tellmsg,strlen(tellmsg));
+					}
+					
 				}
 				else if(strstr(commands,"setenv")!=0){
 					char *str;
@@ -826,4 +854,17 @@ void readBuffer()
 		write(clientfd,user->user_msgtable[user_index][i],strlen(user->user_msgtable[user_index][i]));
 	}
 	user->user_msgtablesize[user_index]=0;
+}
+void initial(int index)
+{
+	user->user_fd_table[index]=-1;
+	for(int i=0;i<20;i++){
+		user->user_name[index][i]='\0';
+	}
+	for(int i=0;i<MaxPATH;i++){
+		for(int j=0;j<MaxPathLen;j++){
+			user->user_environpath[index][i][j]='\0';
+		}
+	}
+	user->user_ensizeTable[index]=0;
 }
