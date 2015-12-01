@@ -20,7 +20,7 @@
 #define MaxMsg 10
 #define MaxMsglen 1024
 #define MaxPathLen 50
-typedef struct superpipe{
+typedef struct{
 	int count;
 	int valid;
 	int pipe_fd[2];
@@ -36,6 +36,8 @@ typedef struct {
 	int userPidTable[ClientNum];
 	struct sockaddr_in user_ip[ClientNum];
 }User_info;
+
+
 
 int memid;
 int clientfd;
@@ -158,7 +160,7 @@ int main(int argc,char *argv[])
 				}
 				else if(strstr(commands,"exit")!=0){//finished
 					char exitmsg[Maxlenline];
-					sprintf(exitmsg,"*** User '%s' left. ***",user->user_name[user_index]);
+					sprintf(exitmsg,"*** User '%s' left. ***\n",user->user_name[user_index]);
 					broadcast(user,ClientNum,exitmsg);
 					
 					initial(user_index);//clean and reset
@@ -217,7 +219,7 @@ int main(int argc,char *argv[])
 					char *str;
 					str=strtok(commands," \r\n");//yell
 					str=strtok(NULL,"\r\n");//msg
-					sprintf(yellmsg,"*** %s yelled ***: %s",user->user_name[user_index],str);
+					sprintf(yellmsg,"*** %s yelled ***: %s\n",user->user_name[user_index],str);
 					broadcast(user,ClientNum,yellmsg);
 					
 				}
@@ -232,11 +234,11 @@ int main(int argc,char *argv[])
 					
 					//check id exist
 					if(user->user_fd_table[tell_id-1]!=-1){
-						sprintf(tellmsg,"*** %s told you ***: %s",user->user_name[tell_id-1],str);
+						sprintf(tellmsg,"*** %s told you ***: %s\n",user->user_name[user_index],str);
 						sendTo(user,tell_id-1,tellmsg);
 					}
 					else{//not exist
-						sprintf(tellmsg,"*** Error: user #<%d> does not exist yet. ***\n",tell_id);
+						sprintf(tellmsg,"*** Error: user #%d does not exist yet. ***\n",tell_id);
 						write(clientfd,tellmsg,strlen(tellmsg));
 					}
 					
