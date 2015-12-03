@@ -322,19 +322,23 @@ int main(int argc,char *argv[])
 				}
 				else if(strchr(commands,'|')==NULL && strchr(commands,'!')==NULL){//none pipe
 					char *ch;
-					char pipe_path[Maxlenline];
-					clean_array(pipe_path,Maxlenline);
+					char pipe_writepath[Maxlenline];
+					char pipe_readpath[Maxlenline];
+					clean_array(pipe_writepath,Maxlenline);
+					clean_array(pipe_readpath,Maxlenline);
 					int pipe_read=0;
 					int pipe_readnum=0;
 					int pipe_write=0;
 					int pipe_writenum=0;
 					int public_pipe_err=0;
-					if((ch=strchr(commands,'>'))!=NULL){
+					if((ch=strchr(commands,'>'))!=NULL){//write
 						if(isdigit(ch[1])){
 							pipe_write=1;
 							pipe_writenum=atoi(ch+1);
-							strcpy(pipe_path,pipe_location);
-							strcat(pipe_path,ch+1);
+							char writenum[1];
+							sprintf(writenum,"%d",pipe_writenum);
+							strcpy(pipe_writepath,pipe_location);
+							strcat(pipe_writepath,writenum);
 							if(user->p_pipe[pipe_writenum].exist==1){
 								char pipe_existmsg[Maxlenline];
 								sprintf(pipe_existmsg,"*** Error: public pipe #%d already exists. ***\n",pipe_writenum);
@@ -343,12 +347,14 @@ int main(int argc,char *argv[])
 							}
 						}
 					}
-					if((ch=strchr(commands,'<'))!=NULL){
+					if((ch=strchr(commands,'<'))!=NULL){//read
 						if(isdigit(ch[1])){
 							pipe_read=1;
 							pipe_readnum=atoi(ch+1);
-							strcpy(pipe_path,pipe_location);
-							strcat(pipe_path,ch+1);
+							char readnum[1];
+							sprintf(readnum,"%d",pipe_readnum);
+							strcpy(pipe_readpath,pipe_location);
+							strcat(pipe_readpath,readnum);
 							if(user->p_pipe[pipe_readnum].valid==0){
 								char pipe_noexistmsg[Maxlenline];
 								sprintf(pipe_noexistmsg,"*** Error: public pipe #%d does not exist yet. ***\n",pipe_readnum);
@@ -361,11 +367,15 @@ int main(int argc,char *argv[])
 						char *str;
 						char pathtmp[CommandLen];
 						char path[CommandLen];
+						
 						char commandmsg[Maxlenline];
+						clean_array(commandmsg,Maxlenline);
+						strcpy(commandmsg,commands);
+						commandmsg[strlen(commandmsg)-1]='\0';
 						int fileread_fd;
 						int filewrite_fd;
-						strcpy(commandmsg,commands);
-						commandmsg[strlen(commands)-1]='\0';
+						
+						
 						strcpy(pathtmp,getenv("PATH"));//get path
 						str=strtok(pathtmp,":");
 						strcpy(path,str);
@@ -439,31 +449,49 @@ int main(int argc,char *argv[])
 											freopen(filename,"w",stdout);
 										}
 										else{
-											if(pipe_write==1){
+											if(pipe_read==1 && pipe_write==1){
+												user->p_pipe[pipe_readnum].exist=0;
+												user->p_pipe[pipe_readnum].valid=0;
+												char pp_readmsg[Maxlenline];
+												sprintf(pp_readmsg,"*** %s (#%d) just received via '%s' ***\n",user->user_name[user_index],user_id,commandmsg);
+												broadcast(user,ClientNum,pp_readmsg);
+												
+												fileread_fd=open(pipe_readpath,O_RDWR, 0777);
+												dup2(fileread_fd,fileno(stdin));
+												///////////////////////////////////////////////////////////////
 												user->p_pipe[pipe_writenum].valid=1;
 												user->p_pipe[pipe_writenum].exist=1;
 												char pp_writemsg[Maxlenline];
 												sprintf(pp_writemsg,"*** %s (#%d) just piped '%s' ***\n",user->user_name[user_index],user_id,commandmsg);
 												broadcast(user,ClientNum,pp_writemsg);
 												
-												filewrite_fd=open(pipe_path,O_RDWR|O_CREAT, 0777);
+												filewrite_fd=open(pipe_writepath,O_RDWR|O_CREAT, 0777);
 												dup2(filewrite_fd,fileno(stdout));
+											}
+											else if(pipe_write==1 && pipe_read==0){
+												user->p_pipe[pipe_writenum].valid=1;
+												user->p_pipe[pipe_writenum].exist=1;
+												char pp_writemsg[Maxlenline];
+												sprintf(pp_writemsg,"*** %s (#%d) just piped '%s' ***\n",user->user_name[user_index],user_id,commandmsg);
+												broadcast(user,ClientNum,pp_writemsg);
+												
+												filewrite_fd=open(pipe_writepath,O_RDWR|O_CREAT, 0777);
+												dup2(filewrite_fd,fileno(stdout));
+											}
+											else if(pipe_read==1 && pipe_write==0){
+												user->p_pipe[pipe_readnum].exist=0;
+												user->p_pipe[pipe_readnum].valid=0;
+												char pp_readmsg[Maxlenline];
+												sprintf(pp_readmsg,"*** %s (#%d) just received via '%s' ***\n",user->user_name[user_index],user_id,commandmsg);
+												broadcast(user,ClientNum,pp_readmsg);
+												
+												fileread_fd=open(pipe_readpath,O_RDWR, 0777);
+												dup2(fileread_fd,fileno(stdin));
+												dup2(clientfd,fileno(stdout));
 											}
 											else{
 												dup2(clientfd,fileno(stdout));
 											}
-										}
-										if(pipe_read==1){
-											user->p_pipe[pipe_readnum].exist=0;
-											user->p_pipe[pipe_readnum].valid=0;
-											char pp_readmsg[Maxlenline];
-											sprintf(pp_readmsg,"*** %s (#%d) just received via '%s' ***\n",user->user_name[user_index],user_id,commandmsg);
-											broadcast(user,ClientNum,pp_readmsg);
-											
-											
-											fileread_fd=open(pipe_path,O_RDWR, 0777);
-											dup2(fileread_fd,fileno(stdin));
-											
 										}
 										if(countequal0>=0){
 											dup2(super_pipe[countequal0].pipe_fd[0],fileno(stdin));//++
@@ -477,16 +505,16 @@ int main(int argc,char *argv[])
 											close(super_pipe[countequal0].pipe_fd[1]);
 										}
 										wait(status);
-										if(pipe_write==1){
-											close(filewrite_fd);
-										}
 									}
 									if(countequal0 >=0){
 										super_pipe[countequal0].valid=0;
 										close(super_pipe[countequal0].pipe_fd[0]);
 									}
+									if(pipe_write==1){
+											close(filewrite_fd);
+									}
 									if(pipe_read==1){
-										remove(pipe_path);
+										remove(pipe_readpath);
 										close(fileread_fd);
 									}	
 								}
@@ -541,257 +569,376 @@ int main(int argc,char *argv[])
 					}
 				}
 				else{//pipe
-					int cmd_num=0;
-					char *str;
-					char cmds[2500][256];//everyline length not exceed 15000 character
-					char temp[Maxlenline];
-					strcpy(temp,commands);
-					str=strtok(commands,"|!");
-					strcpy(cmds[0],str);
-					cmd_num++;
-					while((str=strtok(NULL,"|!"))!=0){//parse all input
-						strcpy(cmds[cmd_num],str);
-						cmd_num++;
-					}
-					
-					int ispipe_stderr=0;
-					int already_err=0;
-					int pipe_err[2];
-					int two=0;
-					if((str=strchr(temp,'!'))!=NULL){
-						ispipe_stderr=1;
-						pipe(pipe_err);
-					}
-					
-					int countequal0=-1;
-					for(int i=0;i<1000;i++){
-						if(super_pipe[i].count > 0 && super_pipe[i].valid ==1)super_pipe[i].count--;
-					}
-					for(int i=0;i<1000;i++){
-						if(super_pipe[i].count==0 && super_pipe[i].valid ==1){//get the number of pipe
-							countequal0=i;
-							close(super_pipe[i].pipe_fd[1]);
-							break;
+				
+					char *ch;
+					char pipe_writepath[Maxlenline];
+					char pipe_readpath[Maxlenline];
+					clean_array(pipe_writepath,Maxlenline);
+					clean_array(pipe_readpath,Maxlenline);
+					int pipe_read=0;
+					int pipe_readnum=0;
+					int pipe_write=0;
+					int pipe_writenum=0;
+					int public_pipe_err=0;
+					char commandmsg[Maxlenline];
+					clean_array(commandmsg,Maxlenline);
+					strcpy(commandmsg,commands);
+					commandmsg[strlen(commandmsg)-1]='\0';
+					if((ch=strchr(commands,'>'))!=NULL){//write public pipe
+						if(isdigit(ch[1])){
+							pipe_write=1;
+							pipe_writenum=atoi(ch+1);
+							char writenum[1];
+							sprintf(writenum,"%d",pipe_writenum);
+							strcpy(pipe_writepath,pipe_location);
+							strcat(pipe_writepath,writenum);
+							if(user->p_pipe[pipe_writenum].exist==1){
+								char pipe_existmsg[Maxlenline];
+								sprintf(pipe_existmsg,"*** Error: public pipe #%d already exists. ***\n",pipe_writenum);
+								write(clientfd,pipe_existmsg,strlen(pipe_existmsg));
+								public_pipe_err=1;
+							}
 						}
 					}
-					int pipe_fd[2];
-					int current_read;
-					int current_read_temp;
+					if((ch=strchr(commands,'<'))!=NULL){//read public pipe
+						if(isdigit(ch[1])){
+							pipe_read=1;
+							pipe_readnum=atoi(ch+1);//++++++++++++++++++++++++++
+							char readnum[1];
+							sprintf(readnum,"%d",pipe_readnum);
+							strcpy(pipe_readpath,pipe_location);
+							strcat(pipe_readpath,readnum);
+							if(user->p_pipe[pipe_readnum].valid==0){
+								char pipe_noexistmsg[Maxlenline];
+								sprintf(pipe_noexistmsg,"*** Error: public pipe #%d does not exist yet. ***\n",pipe_readnum);
+								write(clientfd,pipe_noexistmsg,strlen(pipe_noexistmsg));
+								public_pipe_err=1;
+							}
+						}
+					}
 					
-					for(int i=0;i<cmd_num;i++){
-						char *cmd;
-						char path[CommandLen];
-						char pathtmp[CommandLen];
-						char *parameters[CommandLen];
-						int num_parameter=0;
+					if(public_pipe_err==0){
+						int cmd_num=0;
+						char *str;
+						char cmds[2500][256];//everyline length not exceed 15000 character
+						char temp[Maxlenline];
+						strcpy(temp,commands);
+						str=strtok(commands,"|!");
+						strcpy(cmds[0],str);
+						cmd_num++;
+						while((str=strtok(NULL,"|!"))!=0){//parse all input
+							strcpy(cmds[cmd_num],str);
+							cmd_num++;
+						}
 						
-						int filewrite=0;
-						char filename[CommandLen];
+						int ispipe_stderr=0;
+						int already_err=0;
+						int pipe_err[2];
+						int two=0;
+						if((str=strchr(temp,'!'))!=NULL){
+							ispipe_stderr=1;
+							pipe(pipe_err);
+						}
 						
-						strcpy(pathtmp,getenv("PATH"));//get path
-						cmd=strtok(pathtmp,":");
-						strcpy(path,cmd);
-						strcat(path,"/");//   bin/
-						cmd = strtok(cmds[i]," \t\n\r");//get cmd
-						strcat(path,cmd);//get bin/command
-						parameters[num_parameter]=cmd;//get parameter
-						num_parameter++;
-						
-						if(cmd != NULL){
-							if(access(path,F_OK)==-1 && isdigit(*cmd)==0){//error cmd
-								for(int i=0;i<1000;i++){
-									if(super_pipe[i].count > 0 && super_pipe[i].valid==1)super_pipe[i].count++;
-								}
-								if(ispipe_stderr==1){
-									close(pipe_err[0]);
-									close(pipe_err[1]);
-								}
-								if(i>0){
-									close(current_read_temp);
-								}
-								char cmderrmsg[CommandLen+30]="Unknown command: [";
-								strcat(cmderrmsg,cmd);
-								strcat(cmderrmsg,"].");
-								strcat(cmderrmsg,"\n");
-								write(clientfd,cmderrmsg,strlen(cmderrmsg));
+						int countequal0=-1;
+						for(int i=0;i<1000;i++){
+							if(super_pipe[i].count > 0 && super_pipe[i].valid ==1)super_pipe[i].count--;
+						}
+						for(int i=0;i<1000;i++){
+							if(super_pipe[i].count==0 && super_pipe[i].valid ==1){//get the number of pipe
+								countequal0=i;
+								close(super_pipe[i].pipe_fd[1]);
 								break;
 							}
-							else if(access(path,F_OK)==0){//command exist or not  yes=0 no=-1  //bin/n or bin/cmd
-								if(i<cmd_num-1)pipe(pipe_fd);
-								if((cmd=strtok(NULL," \t\n\r"))!=NULL){
-									if(strcmp(cmd,">")==0){
-										filewrite=1;
+						}
+						int pipe_fd[2];
+						int current_read;
+						int current_read_temp;
+						int fileread_fd;
+						int filewrite_fd;
+						for(int i=0;i<cmd_num;i++){
+							char *cmd;
+							char path[CommandLen];
+							char pathtmp[CommandLen];
+							char *parameters[CommandLen];
+							int num_parameter=0;
+							
+							int filewrite=0;
+							char filename[CommandLen];
+							
+							strcpy(pathtmp,getenv("PATH"));//get path
+							cmd=strtok(pathtmp,":");
+							strcpy(path,cmd);
+							strcat(path,"/");//   bin/
+							cmd = strtok(cmds[i]," \t\n\r");//get cmd
+							strcat(path,cmd);//get bin/command
+							parameters[num_parameter]=cmd;//get parameter
+							num_parameter++;
+							
+							if(cmd != NULL){
+								if(access(path,F_OK)==-1 && isdigit(*cmd)==0){//error cmd
+									for(int i=0;i<1000;i++){
+										if(super_pipe[i].count > 0 && super_pipe[i].valid==1)super_pipe[i].count++;
 									}
-									else{
-										parameters[num_parameter]=cmd;
-										num_parameter++;
+									if(ispipe_stderr==1){
+										close(pipe_err[0]);
+										close(pipe_err[1]);
 									}
-									while((cmd = strtok(NULL, " \t\n\r")) != NULL){
+									if(i>0){
+										close(current_read_temp);
+									}
+									char cmderrmsg[CommandLen+30]="Unknown command: [";
+									strcat(cmderrmsg,cmd);
+									strcat(cmderrmsg,"].");
+									strcat(cmderrmsg,"\n");
+									write(clientfd,cmderrmsg,strlen(cmderrmsg));
+									break;
+								}
+								else if(access(path,F_OK)==0){//command exist or not  yes=0 no=-1  //bin/n or bin/cmd
+									if(i<cmd_num-1)pipe(pipe_fd);
+									if((cmd=strtok(NULL," \t\n\r"))!=NULL){
 										if(strcmp(cmd,">")==0){
 											filewrite=1;
+											cmd=strtok(NULL," \t\n\r");
+											strcpy(filename,cmd);
+										}
+										else if(strchr(cmd,'>')!=NULL){// ls >3
+											while(1)break;//noop
+										}
+										else if(strchr(cmd,'<')!=NULL){// cat <2
+											while(1)break;//noop
 										}
 										else{
-											if(filewrite==1){
+											parameters[num_parameter]=cmd;
+											num_parameter++;
+										}
+										while((cmd = strtok(NULL, " \t\n\r")) != NULL){
+											if(strcmp(cmd,">")==0){
+												filewrite=1;
+												cmd=strtok(NULL," \t\n\r");
 												strcpy(filename,cmd);
 											}
+											else if(strchr(cmd,'>')!=NULL){//cat test.html >3
+												while(1)break;//noop
+											}
+											else if(strchr(cmd,'<')!=NULL){//cat test.html >3
+												while(1)break;//noop
+											}
 											else{
-												strcpy(filename,cmd);
 												parameters[num_parameter]=cmd;
 												num_parameter++;
 											}
 										}
-									}
-									parameters[num_parameter]=(char *)NULL;
-									
-									int cmd_pid;
-									cmd_pid=fork();
-									if(cmd_pid==-1){
-										char errmsg[CommandLen]="fork error";
-										write(clientfd,errmsg,strlen(errmsg));
-									}
-									else if(cmd_pid==0){
-										if(filewrite==1 && i==cmd_num-1){
-											dup2(current_read,fileno(stdin));
-											freopen(filename,"w",stdout);
+										parameters[num_parameter]=(char *)NULL;
+										
+										int cmd_pid;
+										cmd_pid=fork();
+										if(cmd_pid==-1){
+											char errmsg[CommandLen]="fork error";
+											write(clientfd,errmsg,strlen(errmsg));
 										}
-										else{
-											if(ispipe_stderr==1){
-												if(cmd_num==2){//removetag0 test.html !1
-													dup2(pipe_err[1],fileno(stderr));
-													dup2(clientfd,fileno(stdout));
-													close(pipe_err[0]);
-												}
-												else if(cmd_num==3){//removetag0 test.html !1!1
-													dup2(pipe_err[1],fileno(stderr));
-													dup2(pipe_fd[1],fileno(stdout));
-													close(pipe_err[0]);
-												}
+										else if(cmd_pid==0){
+											if(filewrite==1 && i==cmd_num-1){
+												dup2(current_read,fileno(stdin));
+												freopen(filename,"w",stdout);
+											}
+											else if(pipe_read==1 && i==0){//++++  <
+												user->p_pipe[pipe_readnum].exist=0;
+												user->p_pipe[pipe_readnum].valid=0;
+												char pp_readmsg[Maxlenline];
+												sprintf(pp_readmsg,"*** %s (#%d) just received via '%s' ***\n",user->user_name[user_index],user_id,commandmsg);
+												broadcast(user,ClientNum,pp_readmsg);
+											
+												fileread_fd=open(pipe_readpath,O_RDWR, 0777);
+												dup2(fileread_fd,fileno(stdin));
+												dup2(pipe_fd[1],fileno(stdout));
+												close(pipe_fd[0]);
+											}
+											else if(pipe_write==1 && i==cmd_num-1){//++++  >
+												user->p_pipe[pipe_writenum].valid=1;
+												user->p_pipe[pipe_writenum].exist=1;
+												char pp_writemsg[Maxlenline];
+												sprintf(pp_writemsg,"*** %s (#%d) just piped '%s' ***\n",user->user_name[user_index],user_id,commandmsg);
+												broadcast(user,ClientNum,pp_writemsg);
+												
+												dup2(current_read,fileno(stdin));
+												filewrite_fd=open(pipe_writepath,O_RDWR|O_CREAT, 0777);
+												dup2(filewrite_fd,fileno(stdout));
 											}
 											else{
-												dup2(pipe_fd[1],fileno(stdout));//cat test.html
-											}
-											close(pipe_fd[0]);
-										}
-										execv(path,parameters);
-										exit(1);
-									}
-									else{
-										close(pipe_fd[1]);
-										current_read=pipe_fd[0];
-										wait(status);
-									}
-								}
-								else{//execution with no parameters
-									parameters[num_parameter]=(char *)NULL;
-									int cmd_pid;
-									cmd_pid=fork();
-									if(cmd_pid==-1){
-										char errmsg[CommandLen]="fork error";
-										write(clientfd,errmsg,strlen(errmsg));
-									}
-									else if(cmd_pid==0){
-										if(i < cmd_num-1){
-											if(i!=0){
-												if(ispipe_stderr==0){
-													dup2(current_read,fileno(stdin));
-													dup2(pipe_fd[1],fileno(stdout));
-													close(pipe_fd[0]);
+												if(ispipe_stderr==1){
+													if(cmd_num==2){//removetag0 test.html !1
+														dup2(pipe_err[1],fileno(stderr));
+														dup2(clientfd,fileno(stdout));
+														close(pipe_err[0]);
+													}
+													else if(cmd_num==3){//removetag0 test.html !1!1
+														dup2(pipe_err[1],fileno(stderr));
+														dup2(pipe_fd[1],fileno(stdout));
+														close(pipe_err[0]);
+													}
 												}
 												else{
-													if(i == cmd_num-3 ){//cat test.html | number | number !2|2
-														dup2(pipe_fd[1],fileno(stdout));
-														dup2(pipe_err[1],fileno(stderr));
-														close(pipe_err[0]);
-														close(pipe_fd[0]);
-													}
-													else if(i == cmd_num-2){//cat test.html | number | number !2
-														dup2(clientfd,fileno(stdout));
-														dup2(pipe_err[1],fileno(stderr));
-														close(pipe_err[0]);
-													}
-													else{
+													dup2(pipe_fd[1],fileno(stdout));//cat test.html
+												}
+												close(pipe_fd[0]);
+											}
+											execv(path,parameters);
+											exit(1);
+										}
+										else{
+											close(pipe_fd[1]);
+											current_read=pipe_fd[0];
+											wait(status);
+											if(pipe_write==1 && i==cmd_num-1){
+												pipe_write=0;
+												close(filewrite_fd);
+											}
+											if(pipe_read==1 && i==0){
+												pipe_read=0;
+												remove(pipe_readpath);
+												close(fileread_fd);
+											}
+										}
+									}
+									else{//execution with no parameters
+										parameters[num_parameter]=(char *)NULL;
+										int cmd_pid;
+										cmd_pid=fork();
+										if(cmd_pid==-1){
+											char errmsg[CommandLen]="fork error";
+											write(clientfd,errmsg,strlen(errmsg));
+										}
+										else if(cmd_pid==0){
+											if(i < cmd_num-1){
+												if(i!=0){
+													if(ispipe_stderr==0){
 														dup2(current_read,fileno(stdin));
 														dup2(pipe_fd[1],fileno(stdout));
 														close(pipe_fd[0]);
 													}
+													else{
+														if(i == cmd_num-3 ){//cat test.html | number | number !2|2
+															dup2(pipe_fd[1],fileno(stdout));
+															dup2(pipe_err[1],fileno(stderr));
+															close(pipe_err[0]);
+															close(pipe_fd[0]);
+														}
+														else if(i == cmd_num-2){//cat test.html | number | number !2
+															dup2(clientfd,fileno(stdout));
+															dup2(pipe_err[1],fileno(stderr));
+															close(pipe_err[0]);
+														}
+														else{
+															dup2(current_read,fileno(stdin));
+															dup2(pipe_fd[1],fileno(stdout));
+															close(pipe_fd[0]);
+														}
+													}
+												}
+												else{//first command
+													if(countequal0>=0){
+														dup2(super_pipe[countequal0].pipe_fd[0],fileno(stdin));//++
+													}
+													dup2(pipe_fd[1],fileno(stdout));
+													close(pipe_fd[0]);
 												}
 											}
-											else{//first command
-												if(countequal0>=0){
-													dup2(super_pipe[countequal0].pipe_fd[0],fileno(stdin));//++
+											else{//final command
+												dup2(current_read,fileno(stdin));
+												dup2(clientfd, fileno(stdout));
+											}
+											execv(path,parameters);
+											exit(1);
+										}
+										else{
+											if(i < cmd_num-1){
+												close(pipe_fd[1]);
+												current_read=pipe_fd[0];
+											}
+											if(countequal0 >=0){
+												close(super_pipe[countequal0].pipe_fd[0]);
+												super_pipe[countequal0].valid=0;
+												countequal0=-1;//initial
+											}
+											wait(status);
+											if(i>0)
+												close(current_read_temp);
+											if(i<cmd_num-1)
+												current_read_temp=current_read;
+										}
+									}
+								}
+								else if(isdigit(*cmd)!=0){// !N |N
+									int num;
+									num=atoi(cmd);
+									char temp_pipe[30000];//new
+									char temp_pipe2[30000];//old
+									for(int j=0;j<30000;j++){
+										temp_pipe[j]='\0';
+										temp_pipe2[j]='\0';
+									}
+									if(ispipe_stderr==1 && already_err==0){
+										if(i==cmd_num-2 || i==1){
+											str=strtok(str," |!");//!
+										}
+										if(num==atoi(str)){//correct
+											int already=0;
+											already_err==1;
+											for(int j=0;j<1000;j++){//find the same count
+												if(num==super_pipe[j].count && super_pipe[j].valid==1){
+													close(pipe_err[1]);
+													read(pipe_err[0],temp_pipe,sizeof(temp_pipe)*30000);
+													read(super_pipe[j].pipe_fd[0],temp_pipe2,sizeof(temp_pipe2)*30000);
+													strcat(temp_pipe2,temp_pipe);
+													write(super_pipe[j].pipe_fd[1],temp_pipe2,strlen(temp_pipe2));
+													already=1;
+													close(pipe_err[0]);
+													break;
 												}
-												dup2(pipe_fd[1],fileno(stdout));
-												close(pipe_fd[0]);
+											}
+											for(int j=0;j<1000;j++){
+												if(already==1)break;
+												if(super_pipe[j].valid==0){
+													close(pipe_err[1]);
+													super_pipe[j].count=num;
+													super_pipe[j].valid=1;
+													pipe(super_pipe[j].pipe_fd);
+													read(pipe_err[0],temp_pipe,sizeof(temp_pipe)*30000);
+													write(super_pipe[j].pipe_fd[1],temp_pipe,strlen(temp_pipe));
+													close(pipe_err[0]);
+													break;
+												}
 											}
 										}
-										else{//final command
-											dup2(current_read,fileno(stdin));
-											dup2(clientfd, fileno(stdout));
-										}
-										execv(path,parameters);
-										exit(1);
-									}
-									else{
-										if(i < cmd_num-1){
-											close(pipe_fd[1]);
-											current_read=pipe_fd[0];
-										}
-										if(countequal0 >=0){
-											close(super_pipe[countequal0].pipe_fd[0]);
-											super_pipe[countequal0].valid=0;
-											countequal0=-1;//initial
-										}
-										wait(status);
-										if(i>0)
-											close(current_read_temp);
-										if(i<cmd_num-1)
-											current_read_temp=current_read;
-									}
-								}
-							}
-							else if(isdigit(*cmd)!=0){// !N |N
-								int num;
-								num=atoi(cmd);
-								char temp_pipe[30000];//new
-								char temp_pipe2[30000];//old
-								for(int j=0;j<30000;j++){
-									temp_pipe[j]='\0';
-									temp_pipe2[j]='\0';
-								}
-								if(ispipe_stderr==1 && already_err==0){
-									if(i==cmd_num-2 || i==1){
-										str=strtok(str," |!");//!
-									}
-									if(num==atoi(str)){//correct
-										int already=0;
-										already_err==1;
-										for(int j=0;j<1000;j++){//find the same count
-											if(num==super_pipe[j].count && super_pipe[j].valid==1){
-												close(pipe_err[1]);
-												read(pipe_err[0],temp_pipe,sizeof(temp_pipe)*30000);
-												read(super_pipe[j].pipe_fd[0],temp_pipe2,sizeof(temp_pipe2)*30000);
-												strcat(temp_pipe2,temp_pipe);
-												write(super_pipe[j].pipe_fd[1],temp_pipe2,strlen(temp_pipe2));
-												already=1;
-												close(pipe_err[0]);
-												break;
+										else{//|
+											int already=0;
+											for(int j=0;j<1000;j++){//find the same count
+												if(num==super_pipe[j].count && super_pipe[j].valid==1){
+													read(current_read,temp_pipe,sizeof(temp_pipe)*30000);
+													close(current_read);
+													read(super_pipe[j].pipe_fd[0],temp_pipe2,sizeof(temp_pipe2)*30000);
+													strcat(temp_pipe2,temp_pipe);
+													write(super_pipe[j].pipe_fd[1],temp_pipe2,strlen(temp_pipe2));
+													already=1;
+													break;
+												}
 											}
-										}
-										for(int j=0;j<1000;j++){
-											if(already==1)break;
-											if(super_pipe[j].valid==0){
-												close(pipe_err[1]);
-												super_pipe[j].count=num;
-												super_pipe[j].valid=1;
-												pipe(super_pipe[j].pipe_fd);
-												read(pipe_err[0],temp_pipe,sizeof(temp_pipe)*30000);
-												write(super_pipe[j].pipe_fd[1],temp_pipe,strlen(temp_pipe));
-												close(pipe_err[0]);
-												break;
+											for(int j=0;j<1000;j++){
+												if(already==1)break;
+												if(super_pipe[j].valid==0){
+													super_pipe[j].count=num;
+													super_pipe[j].valid=1;
+													pipe(super_pipe[j].pipe_fd);
+													read(current_read,temp_pipe,sizeof(temp_pipe)*30000);
+													close(current_read);
+													write(super_pipe[j].pipe_fd[1],temp_pipe,strlen(temp_pipe));
+													break;
+												}
 											}
 										}
 									}
-									else{//|
+									else{//only |
 										int already=0;
 										for(int j=0;j<1000;j++){//find the same count
 											if(num==super_pipe[j].count && super_pipe[j].valid==1){
@@ -815,32 +962,6 @@ int main(int argc,char *argv[])
 												write(super_pipe[j].pipe_fd[1],temp_pipe,strlen(temp_pipe));
 												break;
 											}
-										}
-									}
-								}
-								else{//only |
-									int already=0;
-									for(int j=0;j<1000;j++){//find the same count
-										if(num==super_pipe[j].count && super_pipe[j].valid==1){
-											read(current_read,temp_pipe,sizeof(temp_pipe)*30000);
-											close(current_read);
-											read(super_pipe[j].pipe_fd[0],temp_pipe2,sizeof(temp_pipe2)*30000);
-											strcat(temp_pipe2,temp_pipe);
-											write(super_pipe[j].pipe_fd[1],temp_pipe2,strlen(temp_pipe2));
-											already=1;
-											break;
-										}
-									}
-									for(int j=0;j<1000;j++){
-										if(already==1)break;
-										if(super_pipe[j].valid==0){
-											super_pipe[j].count=num;
-											super_pipe[j].valid=1;
-											pipe(super_pipe[j].pipe_fd);
-											read(current_read,temp_pipe,sizeof(temp_pipe)*30000);
-											close(current_read);
-											write(super_pipe[j].pipe_fd[1],temp_pipe,strlen(temp_pipe));
-											break;
 										}
 									}
 								}
